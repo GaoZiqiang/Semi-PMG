@@ -27,7 +27,7 @@ from IPython import embed
 
 parser = argparse.ArgumentParser(description='PyTorch MixMatch Training')
 # Optimization options
-parser.add_argument('--epochs', default=5, type=int, metavar='N',
+parser.add_argument('--epochs', default=2, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -46,7 +46,7 @@ parser.add_argument('--gpu', default='0', type=str,
 #Method options
 parser.add_argument('--n-labeled', type=int, default=50,
                         help='Number of labeled data')
-parser.add_argument('--train-iteration', type=int, default=1024,
+parser.add_argument('--train-iteration', type=int, default=5,
                         help='Number of iteration per epoch')
 parser.add_argument('--out', default='result',
                         help='Directory to output the result')
@@ -132,7 +132,7 @@ def main():
 
     train_criterion = SemiLoss()
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    # optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     ema_optimizer= WeightEMA(model, ema_model, alpha=args.ema_decay)
     start_epoch = 0
@@ -149,7 +149,7 @@ def main():
         start_epoch = checkpoint['epoch']
         model.load_state_dict(checkpoint['state_dict'])
         ema_model.load_state_dict(checkpoint['ema_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
+        # optimizer.load_state_dict(checkpoint['optimizer'])
         logger = Logger(os.path.join(args.out, 'log.txt'), title=title, resume=True)
     else:
         logger = Logger(os.path.join(args.out, 'log.txt'), title=title)
@@ -158,49 +158,70 @@ def main():
     writer = SummaryWriter(args.out)
     step = 0
     test_accs = []
+
+    optimizer = optim.SGD([
+        {'params': model.classifier_concat.parameters(), 'lr': 0.002},
+        {'params': model.conv_block1.parameters(), 'lr': 0.002},
+        {'params': model.classifier1.parameters(), 'lr': 0.002},
+        {'params': model.conv_block2.parameters(), 'lr': 0.002},
+        {'params': model.classifier2.parameters(), 'lr': 0.002},
+        {'params': model.conv_block3.parameters(), 'lr': 0.002},
+        {'params': model.classifier3.parameters(), 'lr': 0.002},
+        {'params': model.features.parameters(), 'lr': 0.0002}
+
+    ],
+        momentum=0.9, weight_decay=5e-4)
+    lr = [0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.002, 0.0002]
+
     # Train and val
     for epoch in range(start_epoch, args.epochs):
 
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
 
+        # update learning rate
+        for nlr in range(len(optimizer.param_groups)):
+            optimizer.param_groups[nlr]['lr'] = cosine_anneal_schedule(epoch, args.epochs, lr[nlr])
+
         train_loss, train_loss_x, train_loss_u = train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_optimizer, train_criterion, epoch, use_cuda)
-        _, train_acc = validate(labeled_trainloader, ema_model, criterion, epoch, use_cuda, mode='Train Stats')
-        val_loss, val_acc = validate(val_loader, ema_model, criterion, epoch, use_cuda, mode='Valid Stats')
-        test_loss, test_acc = validate(test_loader, ema_model, criterion, epoch, use_cuda, mode='Test Stats ')
+        # _, train_acc = validate(labeled_trainloader, ema_model, criterion, epoch, use_cuda, mode='Train Stats')
+        # val_loss, val_acc = validate(val_loader, ema_model, criterion, epoch, use_cuda, mode='Valid Stats')
+        # test_loss, test_acc = validate(test_loader, ema_model, criterion, epoch, use_cuda, mode='Test Stats ')
 
         step = args.train_iteration * (epoch + 1)
 
         writer.add_scalar('losses/train_loss', train_loss, step)
-        writer.add_scalar('losses/valid_loss', val_loss, step)
-        writer.add_scalar('losses/test_loss', test_loss, step)
+        # writer.add_scalar('losses/valid_loss', val_loss, step)
+        # writer.add_scalar('losses/test_loss', test_loss, step)
 
-        writer.add_scalar('accuracy/train_acc', train_acc, step)
-        writer.add_scalar('accuracy/val_acc', val_acc, step)
-        writer.add_scalar('accuracy/test_acc', test_acc, step)
+        # writer.add_scalar('accuracy/train_acc', train_acc, step)
+        # writer.add_scalar('accuracy/val_acc', val_acc, step)
+        # writer.add_scalar('accuracy/test_acc', test_acc, step)
 
         # append logger file
-        logger.append([train_loss, train_loss_x, train_loss_u, val_loss, val_acc, test_loss, test_acc])
+        # logger.append([train_loss, train_loss_x, train_loss_u, val_loss, val_acc, test_loss, test_acc])
 
         # save model
-        is_best = val_acc > best_acc
-        best_acc = max(val_acc, best_acc)
-        save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
-                'ema_state_dict': ema_model.state_dict(),
-                'acc': val_acc,
-                'best_acc': best_acc,
-                'optimizer' : optimizer.state_dict(),
-            }, is_best)
-        test_accs.append(test_acc)
+        # is_best = val_acc > best_acc
+        # best_acc = max(val_acc, best_acc)
+        # save_checkpoint({
+        #         'epoch': epoch + 1,
+        #         'state_dict': model.state_dict(),
+        #         'ema_state_dict': ema_model.state_dict(),
+        #         'acc': val_acc,
+        #         'best_acc': best_acc,
+        #         'optimizer' : optimizer.state_dict(),
+        #     }, is_best)
+        # test_accs.append(test_acc)
     logger.close()
     writer.close()
 
-    print('Best acc:')
-    print(best_acc)
+    torch.save(model, "./output/model.pth")
 
-    print('Mean acc:')
-    print(np.mean(test_accs[-20:]))
+    # print('Best acc:')
+    # print(best_acc)
+
+    # print('Mean acc:')
+    # print(np.mean(test_accs[-20:]))
 
     # trainset = torchvision.datasets.ImageFolder(root='./data/train', transform=transform_train)
     # trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=4)
@@ -210,7 +231,12 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
+
+    losses1 = AverageMeter()
+    losses2 = AverageMeter()
+    losses3 = AverageMeter()
     losses = AverageMeter()
+
     losses_x = AverageMeter()
     losses_u = AverageMeter()
     ws = AverageMeter()
@@ -263,7 +289,12 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
             # embed()
             shape1 = outputs_u[0].shape[0]
             shape2 = outputs_u[0].shape[1]
-            p = torch.zeros(shape1, shape2)
+            if use_cuda:
+                p = torch.zeros(shape1, shape2).cuda()
+            else:
+                p = torch.zeros(shape1, shape2)
+
+            ### 可能后边logits出现的所有的问题都出在这
             for i in range(len(outputs_u)):
                 p = p + (torch.softmax(outputs_u[i], dim=1) + torch.softmax(outputs_u2[i], dim=1)) / 2
             # p = (torch.softmax(outputs_u, dim=1) + torch.softmax(outputs_u2, dim=1)) / 2
@@ -273,6 +304,7 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
 
         # mixup
         # embed()
+        ### inputs_x inputs_u inputs_u2进行拼接
         all_inputs = torch.cat([inputs_x, inputs_u, inputs_u2], dim=0)
         all_targets = torch.cat([targets_x, targets_u, targets_u], dim=0)
 
@@ -291,59 +323,151 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
 
         # interleave labeled and unlabed samples between batches to get correct batchnorm calculation
         mixed_input = list(torch.split(mixed_input, batch_size))
+        ### 这一个interleave没问题
         mixed_input = interleave(mixed_input, batch_size)
 
-        ### 最终输入为mixed_input
-        ### 最终特征提取在这里
-        ### 将model换成我的model
-        logits = [model(mixed_input[0])]
-        for input in mixed_input[1:]:
-            logits.append(model(input))### 特征提取
+        # ### 最终输入为mixed_input
+        # ### 最终特征提取在这里 这里提取的是output_concat
+        # ### 将model换成我的model
+        # ### targets_x
+        # # embed()
+        # logits = []
+        # # embed()
+        # logits.append(model(mixed_input[0])[3])
+        # ### model(mixed_input[0])[3]相当于_, _, _, logit = model(mixed_input[0])
+        # ### targets_u
+        # for input in mixed_input[1:]:
+        #     _, _, _, logit = model(input)
+        #     logits.append(logit)### 特征提取
+        #
+        # ### 此时logits[i].shape [2,200]
+        # # put interleaved samples back
+        # ### 问题出在这个interleave上
+        # # embed()
+        # logits = interleave(logits, batch_size)
+        # # embed()
+        # ### 原来的代码
+        # logits_x = logits[0]
+        # logits_u = torch.cat(logits[1:], dim=0)
+        #
+        # ### 这里是有问题的
+        # # logits_x = logits[0][:batch_size]# 有问题 应该是logits_x = logits[0]
+        # # logits_u = torch.cat(logits[batch_size:], dim=0)# 有问题 应该是logits_u = torch.cat(logits[1:], dim=0)
+        #
+        # ### 计算半监督损失
+        # ### logits_x logits_u就是outputs_x outputs_u
+        # Lx, Lu, w = criterion(logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:], epoch+batch_idx/args.train_iteration)
+        #
+        # loss = Lx + w * Lu
 
-        # put interleaved samples back
-        logits = interleave(logits, batch_size)
-        logits_x = logits[0]
-        logits_u = torch.cat(logits[1:], dim=0)
+        # logits = []
+        # # embed()
+        # logits.append(model(mixed_input[0])[3])
+        # ### model(mixed_input[0])[3]相当于_, _, _, logit = model(mixed_input[0])
+        # ### targets_u
+        # for input in mixed_input[1:]:
+        #     _, _, _, logit = model(input)
+        #     logits.append(logit)  ### 特征提取
 
-        Lx, Lu, w = criterion(logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:], epoch+batch_idx/args.train_iteration)
+        ###### input1
+        optimizer.zero_grad()
+        ### get mixed_input1
+        mixed_input1 = jigsaw_generator(mixed_input, 8)
+        ### total mixed_input 3
+        logits = get_logits(0, model, mixed_input1)
+        loss1 = get_loss(logits, criterion, mixed_target, batch_size, batch_idx, epoch)
+        # record loss
+        losses1.update(loss1.item(), inputs_x.size(0))
+        loss1.backward()
+        optimizer.step()
+        ema_optimizer.step()
 
-        loss = Lx + w * Lu
 
+        ###### input2
+        optimizer.zero_grad()
+        ### get mixed_input1
+        mixed_input2 = jigsaw_generator(mixed_input, 4)
+        ### total mixed_input 3
+        logits = get_logits(1, model, mixed_input2)
+        loss2 = get_loss(logits, criterion, mixed_target, batch_size, batch_idx, epoch)
+        # record loss
+        losses2.update(loss2.item(), inputs_x.size(0))
+        loss2.backward()
+        optimizer.step()
+        ema_optimizer.step()
+
+        ###### input3
+        optimizer.zero_grad()
+        ### get mixed_input1
+        mixed_input3 = jigsaw_generator(mixed_input, 2)
+        ### total mixed_input 3
+        logits = get_logits(2, model, mixed_input3)
+        loss3 = get_loss(logits, criterion, mixed_target, batch_size, batch_idx, epoch)
+        # record loss
+        losses3.update(loss3.item(), inputs_x.size(0))
+        loss3.backward()
+        optimizer.step()
+        ema_optimizer.step()
+
+        ###### total input
+        optimizer.zero_grad()
+        ### total mixed_input 3
+        logits = get_logits(3,model,mixed_input)
+        loss = get_loss(logits, criterion, mixed_target, batch_size, batch_idx, epoch)
         # record loss
         losses.update(loss.item(), inputs_x.size(0))
-        losses_x.update(Lx.item(), inputs_x.size(0))
-        losses_u.update(Lu.item(), inputs_x.size(0))
-        ws.update(w, inputs_x.size(0))
-
-        # compute gradient and do SGD step
-        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         ema_optimizer.step()
+        # losses_x.update(Lx.item(), inputs_x.size(0))
+        # losses_u.update(Lu.item(), inputs_x.size(0))
+        # ws.update(w, inputs_x.size(0))
+
+        # compute gradient and do SGD step
+        # optimizer.zero_grad()
+        # loss.backward()
+        # optimizer.step()
+        # ema_optimizer.step()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
         # plot progress
-        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | Loss_x: {loss_x:.4f} | Loss_u: {loss_u:.4f} | W: {w:.4f}'.format(
-                    batch=batch_idx + 1,
-                    size=args.train_iteration,
-                    data=data_time.avg,
-                    bt=batch_time.avg,
-                    total=bar.elapsed_td,
-                    eta=bar.eta_td,
-                    loss=losses.avg,
-                    loss_x=losses_x.avg,
-                    loss_u=losses_u.avg,
-                    w=ws.avg,
-                    )
+        # bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | Loss_x: {loss_x:.4f} | Loss_u: {loss_u:.4f} | W: {w:.4f}'.format(
+        #             batch=batch_idx + 1,
+        #             size=args.train_iteration,
+        #             data=data_time.avg,
+        #             bt=batch_time.avg,
+        #             total=bar.elapsed_td,
+        #             eta=bar.eta_td,
+        #             loss=losses.avg,
+        #             loss_x=losses_x.avg,
+        #             loss_u=losses_u.avg,
+        #             w=ws.avg,
+        #             )
+        bar.suffix = '({batch}|{size}|{epoch}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | Loss_1: {loss1:.4f} | Loss_2: {loss2:.4f} | Loss_3: {loss3:.4f}'.format(
+            batch=batch_idx + 1,
+            size=args.train_iteration,
+            epoch=epoch + 1,
+            data=data_time.avg,
+            bt=batch_time.avg,
+            total=bar.elapsed_td,
+            eta=bar.eta_td,
+            loss=losses.avg,
+            loss1=losses1.avg,
+            loss2=losses2.avg,
+            loss3=losses3.avg,
+            # loss_x=losses_x.avg,
+            # loss_u=losses_u.avg,
+            # w=ws.avg,
+        )
         bar.next()
     bar.finish()
 
-    torch.save(model,"./output/model.pth")
 
-    return (losses.avg, losses_x.avg, losses_u.avg,)
+
+    return (losses.avg, losses1.avg, losses2.avg, losses3.avg)
 
 def validate(valloader, model, criterion, epoch, use_cuda, mode):
 
@@ -367,7 +491,7 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
                 inputs, targets = inputs.cuda(), targets.cuda(non_blocking=True)
             # compute output
             outputs = model(inputs)
-            embed()
+            # embed()
             loss = criterion(outputs, targets)
 
             # measure accuracy and record loss
@@ -396,6 +520,75 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
         bar.finish()
     return (losses.avg, top1.avg)
 
+### get_mixed_input
+def jigsaw_generator(images, n):
+    result = []
+    for image in images:
+        l = []
+        for a in range(n):
+            for b in range(n):
+                l.append([a, b])
+        block_size = 448 // n
+        rounds = n ** 2
+        random.shuffle(l)
+        jigsaws = image.clone()
+        for i in range(rounds):
+            x, y = l[i]
+            temp = jigsaws[..., 0:block_size, 0:block_size].clone()
+            jigsaws[..., 0:block_size, 0:block_size] = jigsaws[..., x * block_size:(x + 1) * block_size,
+                                                       y * block_size:(y + 1) * block_size].clone()
+            jigsaws[..., x * block_size:(x + 1) * block_size, y * block_size:(y + 1) * block_size] = temp
+        result.append(jigsaws)
+    return result
+
+
+
+def get_logits(input_id,model,mixed_input):
+    logits = []
+    # embed()
+    logits.append(model(mixed_input[0])[input_id])
+    ### model(mixed_input[0])[3]相当于_, _, _, logit = model(mixed_input[0])
+    ### targets_u
+    for input in mixed_input[1:]:
+        logit = model(input)[input_id]
+        logits.append(logit)  ### 特征提取
+
+    return logits
+
+def get_loss(logits,criterion,mixed_target,batch_size,batch_idx,epoch):
+
+    # logits = []
+    # # embed()
+    # logits.append(model(mixed_input[0])[3])
+    # ### model(mixed_input[0])[3]相当于_, _, _, logit = model(mixed_input[0])
+    # ### targets_u
+    # for input in mixed_input[1:]:
+    #     _, _, _, logit = model(input)
+    #     logits.append(logit)  ### 特征提取
+
+    ### 此时logits[i].shape [2,200]
+    # put interleaved samples back
+    ### 问题出在这个interleave上
+    # embed()
+    logits = interleave(logits, batch_size)
+    # embed()
+    ### 原来的代码
+    logits_x = logits[0]
+    logits_u = torch.cat(logits[1:], dim=0)
+
+    ### 这里是有问题的
+    # logits_x = logits[0][:batch_size]# 有问题 应该是logits_x = logits[0]
+    # logits_u = torch.cat(logits[batch_size:], dim=0)# 有问题 应该是logits_u = torch.cat(logits[1:], dim=0)
+
+    ### 计算半监督损失
+    ### logits_x logits_u就是outputs_x outputs_u
+    Lx, Lu, w = criterion(logits_x, mixed_target[:batch_size], logits_u, mixed_target[batch_size:],
+                          epoch + batch_idx / args.train_iteration)
+
+    loss = Lx + w * Lu
+
+    return loss
+
 def save_checkpoint(state, is_best, checkpoint=args.out, filename='checkpoint.pth.tar'):
     filepath = os.path.join(checkpoint, filename)
     torch.save(state, filepath)
@@ -408,12 +601,13 @@ def linear_rampup(current, rampup_length=args.epochs):
     else:
         current = np.clip(current / rampup_length, 0.0, 1.0)
         return float(current)
-
+### 半监督损失 Lx + Lu + w
 class SemiLoss(object):
     def __call__(self, outputs_x, targets_x, outputs_u, targets_u, epoch):
         probs_u = torch.softmax(outputs_u, dim=1)
-
+        ### 有标签数据的损失 交叉熵损失
         Lx = -torch.mean(torch.sum(F.log_softmax(outputs_x, dim=1) * targets_x, dim=1))
+        ### 无标签数据的损失 计算l2 loss
         Lu = torch.mean((probs_u - targets_u)**2)
 
         return Lx, Lu, args.lambda_u * linear_rampup(epoch)
@@ -456,7 +650,24 @@ def interleave(xy, batch):
     xy = [[v[offsets[p]:offsets[p + 1]] for p in range(nu + 1)] for v in xy]
     for i in range(1, nu + 1):
         xy[0][i], xy[i][i] = xy[i][i], xy[0][i]
+    # embed()
     return [torch.cat(v, dim=0) for v in xy]
+
+def interleave_(xy, batch):
+    nu = len(xy) - 1
+    offsets = interleave_offsets(batch, nu)
+    xy = [[v[offsets[p]:offsets[p + 1]] for p in range(nu + 1)] for v in xy]
+    for i in range(1, nu + 1):
+        xy[0][i], xy[i][i] = xy[i][i], xy[0][i]
+    # embed()
+    total_tensors = []
+    for v in xy:
+        tensors = []
+        for vv in v:
+            if len(vv) > 0:
+                tensors.append(vv[0])# vv[0]是[2,200]所以cat之后就是[4,200]
+        total_tensors.append(tensors)
+    return [torch.cat(v, dim=0) for v in total_tensors]
 
 if __name__ == '__main__':
     main()
