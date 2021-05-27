@@ -10,6 +10,10 @@ class PMG(nn.Module):
         self.max1 = nn.MaxPool2d(kernel_size=56, stride=56)
         self.max2 = nn.MaxPool2d(kernel_size=28, stride=28)
         self.max3 = nn.MaxPool2d(kernel_size=14, stride=14)
+        # ### 可能原因 池化太厉害
+        # self.max1 = nn.MaxPool2d(kernel_size=14, stride=14)
+        # self.max2 = nn.MaxPool2d(kernel_size=14, stride=14)
+        # self.max3 = nn.MaxPool2d(kernel_size=14, stride=14)
         self.num_ftrs = 2048 * 1 * 1
         self.elu = nn.ELU(inplace=True)
 
