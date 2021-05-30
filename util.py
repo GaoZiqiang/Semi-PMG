@@ -111,7 +111,7 @@ def test(net, criterion, batch_size):
 
 if __name__ == "__main__":
     model_path = "./output/model.pth"
-    net = torch.load(model_path,map_location = torch.device('cpu'))
+    model = torch.load(model_path, map_location = torch.device('cpu'))
     # GPU
     # device = torch.device('cpu')
     # net.to(device)
@@ -119,4 +119,4 @@ if __name__ == "__main__":
 
     criterion = nn.CrossEntropyLoss()
 
-    test(net,criterion,batch_size=8,)
+    test(model, criterion, batch_size=8, )
