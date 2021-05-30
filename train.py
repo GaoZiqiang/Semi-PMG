@@ -22,13 +22,15 @@ import dataset.cifar10 as dataset
 from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
 from tensorboardX import SummaryWriter
 
+from IPython import embed
+
 parser = argparse.ArgumentParser(description='PyTorch MixMatch Training')
 # Optimization options
-parser.add_argument('--epochs', default=1024, type=int, metavar='N',
+parser.add_argument('--epochs', default=5, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('--batch-size', default=64, type=int, metavar='N',
+parser.add_argument('--batch-size', default=8, type=int, metavar='N',
                     help='train batchsize')
 parser.add_argument('--lr', '--learning-rate', default=0.002, type=float,
                     metavar='LR', help='initial learning rate')
@@ -41,7 +43,7 @@ parser.add_argument('--manualSeed', type=int, default=0, help='manual seed')
 parser.add_argument('--gpu', default='0', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 #Method options
-parser.add_argument('--n-labeled', type=int, default=250,
+parser.add_argument('--n-labeled', type=int, default=50,
                         help='Number of labeled data')
 parser.add_argument('--train-iteration', type=int, default=1024,
                         help='Number of iteration per epoch')
@@ -56,9 +58,13 @@ parser.add_argument('--ema-decay', default=0.999, type=float)
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
 
-# Use CUDA
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+
+# from IPython import embed
+# embed()
 use_cuda = torch.cuda.is_available()
+if use_cuda:
+    # Use CUDA
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 # Random seed
 if args.manualSeed is None:
@@ -74,7 +80,7 @@ def main():
         mkdir_p(args.out)
 
     # Data
-    print(f'==> Preparing cifar10')
+    print('==> Preparing cifar10')
     transform_train = transforms.Compose([
         dataset.RandomPadandCrop(32),
         dataset.RandomFlip(),
@@ -86,7 +92,9 @@ def main():
     ])
 
     train_labeled_set, train_unlabeled_set, val_set, test_set = dataset.get_cifar10('./data', args.n_labeled, transform_train=transform_train, transform_val=transform_val)
+    # embed()
     labeled_trainloader = data.DataLoader(train_labeled_set, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
+    # embed()
     unlabeled_trainloader = data.DataLoader(train_unlabeled_set, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
     val_loader = data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
     test_loader = data.DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
@@ -96,7 +104,8 @@ def main():
 
     def create_model(ema=False):
         model = models.WideResNet(num_classes=10)
-        model = model.cuda()
+        if use_cuda:
+            model = model.cuda()
 
         if ema:
             for param in model.parameters():
@@ -182,6 +191,9 @@ def main():
     print('Mean acc:')
     print(np.mean(test_accs[-20:]))
 
+    # trainset = torchvision.datasets.ImageFolder(root='./data/train', transform=transform_train)
+    # trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=4)
+
 
 def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_optimizer, criterion, epoch, use_cuda):
 
@@ -206,7 +218,7 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
             inputs_x, targets_x = labeled_train_iter.next()
 
         try:
-            (inputs_u, inputs_u2), _ = unlabeled_train_iter.next()
+            (inputs_u, inputs_u2), _ = unlabeled_train_iter.next()### 问题：这里为什么是(inputs_u, inputs_u2),_？
         except:
             unlabeled_train_iter = iter(unlabeled_trainloader)
             (inputs_u, inputs_u2), _ = unlabeled_train_iter.next()
@@ -244,6 +256,7 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
 
         idx = torch.randperm(all_inputs.size(0))
 
+        ### input_a input_b是啥？
         input_a, input_b = all_inputs, all_inputs[idx]
         target_a, target_b = all_targets, all_targets[idx]
 
@@ -254,9 +267,12 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
         mixed_input = list(torch.split(mixed_input, batch_size))
         mixed_input = interleave(mixed_input, batch_size)
 
+        ### 最终输入为mixed_input
+        ### 最终特征提取在这里
+        ### 将model换成我的model
         logits = [model(mixed_input[0])]
         for input in mixed_input[1:]:
-            logits.append(model(input))
+            logits.append(model(input))### 特征提取
 
         # put interleaved samples back
         logits = interleave(logits, batch_size)
@@ -313,7 +329,7 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
     model.eval()
 
     end = time.time()
-    bar = Bar(f'{mode}', max=len(valloader))
+    bar = Bar('{mode}', max=len(valloader))
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(valloader):
             # measure data loading time
@@ -323,6 +339,7 @@ def validate(valloader, model, criterion, epoch, use_cuda, mode):
                 inputs, targets = inputs.cuda(), targets.cuda(non_blocking=True)
             # compute output
             outputs = model(inputs)
+            embed()
             loss = criterion(outputs, targets)
 
             # measure accuracy and record loss
