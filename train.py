@@ -247,6 +247,7 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
             targets_u = targets_u.detach()
 
         # mixup
+        ### 拼接关系：一个inputs_x,两个伪标签inputs_u,inputs_u2
         all_inputs = torch.cat([inputs_x, inputs_u, inputs_u2], dim=0)
         all_targets = torch.cat([targets_x, targets_u, targets_u], dim=0)
 
@@ -257,9 +258,10 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
         idx = torch.randperm(all_inputs.size(0))
 
         ### input_a input_b是啥？
-        input_a, input_b = all_inputs, all_inputs[idx]
+        input_a, input_b = all_inputs, all_inputs[idx]### all_inputs[idx]是啥？
         target_a, target_b = all_targets, all_targets[idx]
 
+        ### 计算mixed_input mixed_target
         mixed_input = l * input_a + (1 - l) * input_b
         mixed_target = l * target_a + (1 - l) * target_b
 

@@ -284,10 +284,11 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
             # embed()
             # inputs_u = inputs_u.resize_(64, 3, 512, 512)
             # outputs_u = model(inputs_u)
-            outputs_u = model(inputs_u)
+            ### 问题出在这里 model的输出为多个值
+            outputs_u = model(inputs_u)# model的返回值为xc1, xc2, xc3, x_concat
             outputs_u2 = model(inputs_u2)
             # embed()
-            shape1 = outputs_u[0].shape[0]
+            shape1 = outputs_u[0].shape[0]### outputs_u[0]对应xc1
             shape2 = outputs_u[0].shape[1]
             if use_cuda:
                 p = torch.zeros(shape1, shape2).cuda()
@@ -317,7 +318,7 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
         ### input_a input_b是啥？
         input_a, input_b = all_inputs, all_inputs[idx]
         target_a, target_b = all_targets, all_targets[idx]
-
+        ### 进行mixed_input和mixed_target计算
         mixed_input = l * input_a + (1 - l) * input_b
         mixed_target = l * target_a + (1 - l) * target_b
 
@@ -373,7 +374,6 @@ def train(labeled_trainloader, unlabeled_trainloader, model, optimizer, ema_opti
         optimizer.zero_grad()
         ### get mixed_input1
         mixed_input1 = jigsaw_generator(mixed_input, 8)
-        ### total mixed_input 3
         logits = get_logits(0, model, mixed_input1)
         loss1 = get_loss(logits, criterion, mixed_target, batch_size, batch_idx, epoch)
         # record loss
