@@ -1,5 +1,7 @@
 import glob
 import os.path as osp
+from PIL import Image
+
 from torch.utils.data import DataLoader
 
 from IPython import embed
@@ -7,6 +9,7 @@ from IPython import embed
 def process_dir(dir_path):
     img_paths = glob.glob(osp.join(dir_path, '*'))
     # embed()
+    ### 移除cifar10数据集
     img_paths.remove(dir_path + '/cifar-10-python.tar.gz')
     img_paths.remove(dir_path + '/cifar-10-batches-py')
     dataset = []
@@ -17,6 +20,7 @@ def process_dir(dir_path):
 
         for sub_img_path in sub_img_paths:
             dataset.append((sub_img_path,target))
+            img = Image.open(sub_img_path)
     #
     #
     #
