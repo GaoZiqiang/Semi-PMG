@@ -19,7 +19,7 @@ test_image_paths = test_list['file_list']# 真实路径为train_list['file_list'
 
 print("------ start splitting ------")
 i = 1
-for train_image_path in train_image_paths:
+for train_image_path in test_image_paths:
     print("image:",i)
     i += 1
     # 获取路径
@@ -35,7 +35,9 @@ for train_image_path in train_image_paths:
     class_path = '../output/stanford_dogs_splited/' + image_class
     if not osp.exists(class_path):
         os.makedirs(class_path)
-    new_image_path = class_path + '/' + image_name
+    # new_image_path = class_path + '/' + image_name# 训练集
+    new_image_path = class_path + '/' + 'images/'+ image_name
+
     # embed()
     image.save(new_image_path)
 
